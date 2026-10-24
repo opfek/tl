@@ -69,8 +69,47 @@ select{
 .strip input{accent-color:var(--mine);margin:0}
 .strip select{margin:0;max-width:none;border-radius:999px;padding:5px 8px;font-size:14px}
 .notice{width:100%;text-align:center;color:var(--warn);font-size:13px}
-button:focus-visible,select:focus-visible{outline:2px solid var(--mine);outline-offset:2px}
-@media (prefers-reduced-motion:reduce){.hold{transition:none}}
+button:focus-visible,select:focus-visible,textarea:focus-visible,.editable:focus-visible{outline:2px solid var(--mine);outline-offset:2px}
+.editable{cursor:pointer;border-radius:6px}
+.editable:active{background:var(--bg)}
+.edit-box{
+  width:100%;min-height:84px;resize:none;font:inherit;font-size:19px;line-height:1.35;color:var(--fg);
+  background:var(--bg);border:1px solid var(--side);border-radius:10px;padding:10px;
+}
+.edit-row{display:flex;gap:8px;justify-content:flex-end}
+.edit-row button{
+  font:inherit;font-size:15px;font-weight:600;border-radius:10px;padding:8px 14px;
+  border:1px solid var(--line);background:var(--bg);color:var(--fg);
+}
+.edit-row .go{background:var(--side);border-color:var(--side);color:#fff}
+.sheet{
+  position:fixed;inset:0;z-index:20;background:var(--bg);display:grid;grid-template-rows:auto 1fr;
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);
+}
+.sheet-head{
+  display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);background:var(--panel);
+  padding:12px max(16px,env(safe-area-inset-left,0px)) 12px max(16px,env(safe-area-inset-right,0px));
+}
+.sheet-head h2{font-size:17px;margin:0 auto 0 0}
+.sheet-head button{
+  font:inherit;font-size:14px;color:var(--fg);background:var(--bg);border:1px solid var(--line);
+  border-radius:999px;padding:6px 12px;
+}
+.log{
+  list-style:none;margin:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;min-height:0;
+  padding:14px max(16px,env(safe-area-inset-left,0px)) 24px max(16px,env(safe-area-inset-right,0px));
+}
+.entry{--side:var(--mine);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:grid;gap:4px}
+.entry.theirs{--side:var(--theirs)}
+.entry-meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.entry-meta .who{font-size:11px}
+.entry-meta button{
+  margin-left:auto;font:inherit;font-size:13px;color:var(--fg);background:var(--bg);
+  border:1px solid var(--line);border-radius:999px;padding:3px 10px;
+}
+.entry-said{font-size:15px;color:var(--muted);overflow-wrap:anywhere}
+.entry-out{font-size:18px;font-weight:600;overflow-wrap:anywhere}
+.empty{color:var(--muted);text-align:center;padding:32px 0}
 </style>
 </head>
 <body>
@@ -83,11 +122,13 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--mine);outline-
   <div class="out" id="out-theirs"><span class="label">Hold the button and speak</span></div>
   <div class="row">
     <button class="replay" id="replay-theirs" disabled>Replay</button>
+    <button class="replay" id="stop-theirs" disabled>Stop</button>
     <button class="hold" id="hold-theirs">Hold to talk</button>
   </div>
 </section>
 
 <nav class="strip">
+  <button id="hist-open" type="button">History</button>
   <button id="flip" type="button">Flip top</button>
   <label><input type="checkbox" id="autospeak" checked> Auto-speak</label>
   <select id="rate" aria-label="Speech speed">
@@ -106,9 +147,19 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--mine);outline-
   <div class="out" id="out-mine"><span class="label">Hold the button and speak. Release when you're done.</span></div>
   <div class="row">
     <button class="replay" id="replay-mine" disabled>Replay</button>
+    <button class="replay" id="stop-mine" disabled>Stop</button>
     <button class="hold" id="hold-mine">Hold to talk</button>
   </div>
 </section>
+
+<div class="sheet" id="history" hidden role="dialog" aria-label="Conversation history">
+  <div class="sheet-head">
+    <h2>Conversation</h2>
+    <button id="hist-clear" type="button">Clear</button>
+    <button id="hist-close" type="button">Close</button>
+  </div>
+  <ol class="log" id="log"></ol>
+</div>
 
 <script>
 // sr = speech recognition locale, tr = Google Translate code, tts = speech voice locale
@@ -161,13 +212,70 @@ $("flip").onclick = () => {
 function notice(msg){ const n=$("notice"); n.textContent=msg||""; n.hidden=!msg; }
 
 // ---------- rendering ----------
-function show(side, {label, text, cls=""}) {
+function show(side, {label, text, cls="", onTap=null}) {
   const out = sides[side].out;
   out.replaceChildren();
   if (label) { const l=document.createElement("span"); l.className="label"; l.textContent=label; out.append(l); }
-  if (text)  { const t=document.createElement("div");  t.className="text "+cls; t.textContent=text; out.append(t); }
+  if (text)  {
+    const t=document.createElement("div"); t.className="text "+cls; t.textContent=text;
+    if (onTap) {
+      t.classList.add("editable"); t.tabIndex = 0; t.setAttribute("role","button");
+      t.onclick = onTap;
+      t.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTap(); } };
+    }
+    out.append(t);
+  }
   out.scrollTop = out.scrollHeight;
 }
+
+function buzz(pattern){ try { navigator.vibrate && navigator.vibrate(pattern); } catch {} }
+
+function setHoldsEnabled(on){
+  for (const s of ["mine","theirs"]) sides[s].hold.disabled = !on || !SR;
+}
+
+// ---------- conversation history (kept for this page visit only) ----------
+const convo = [];
+function fmtTime(d){ try { return d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}); } catch { return ""; } }
+function renderHistory(){
+  $("hist-open").textContent = convo.length ? "History (" + convo.length + ")" : "History";
+  if ($("history").hidden) return;
+  const log = $("log");
+  log.replaceChildren();
+  if (!convo.length) {
+    const li = document.createElement("li"); li.className = "empty";
+    li.textContent = "Nothing yet. Each message you translate shows up here.";
+    log.append(li); return;
+  }
+  for (const e of convo) {
+    const li = document.createElement("li"); li.className = "entry " + e.side;
+    const meta = document.createElement("div"); meta.className = "entry-meta";
+    const who = document.createElement("span"); who.className = "who"; who.textContent = e.side === "mine" ? "You" : "Them";
+    const when = document.createElement("span"); when.textContent = fmtTime(e.time) + (e.edited ? " · corrected" : "");
+    const play = document.createElement("button"); play.type = "button"; play.textContent = "Play";
+    play.onclick = () => { primeSpeech(); speak(e.out, e.toTts); };
+    meta.append(who, when, play);
+    const said = document.createElement("div"); said.className = "entry-said"; said.textContent = e.said;
+    const out = document.createElement("div"); out.className = "entry-out"; out.textContent = e.out;
+    li.append(meta, said, out);
+    log.append(li);
+  }
+  log.scrollTop = log.scrollHeight;
+}
+$("hist-open").onclick = () => { $("history").hidden = false; renderHistory(); $("hist-close").focus(); };
+$("hist-close").onclick = () => { $("history").hidden = true; };
+let clearArmed = null;
+$("hist-clear").onclick = () => {
+  const b = $("hist-clear");
+  if (!clearArmed) {
+    b.textContent = "Tap again to clear";
+    clearArmed = setTimeout(() => { clearArmed = null; b.textContent = "Clear"; }, 3000);
+    return;
+  }
+  clearTimeout(clearArmed); clearArmed = null; b.textContent = "Clear";
+  convo.length = 0;
+  renderHistory();
+};
 
 // ---------- speech output ----------
 let voices = [];
@@ -179,12 +287,25 @@ function pickVoice(tts){
   const want = tts.toLowerCase(), base = want.split("-")[0];
   return voices.find(v => norm(v) === want) || voices.find(v => norm(v).startsWith(base+"-")) || voices.find(v => norm(v) === base) || null;
 }
+let current = null; // the utterance currently playing, so a cancelled one can't reset the Stop buttons
+function setSpeaking(on){
+  for (const s of ["mine","theirs"]) $("stop-"+s).disabled = !on;
+}
+function stopSpeaking(){
+  current = null;
+  try { speechSynthesis.cancel(); } catch {}
+  setSpeaking(false);
+}
 function speak(text, tts){
   if (!("speechSynthesis" in window) || !text) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = tts; u.rate = parseFloat(rate.value) || 1;
   const v = pickVoice(tts); if (v) u.voice = v;
+  const done = () => { if (current === u) { current = null; setSpeaking(false); } };
+  u.onend = done; u.onerror = done;
+  current = u;
+  setSpeaking(true);
   speechSynthesis.speak(u);
 }
 let primed = false;
@@ -258,11 +379,12 @@ function startRec(st){
 }
 
 function beginHold(side, ev){
-  if (!SR || active) return;
+  if (!SR || active || editing) return;
   ev.preventDefault();
+  buzz(25);
   try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch {}
   primeSpeech();
-  try { speechSynthesis.cancel(); } catch {}
+  stopSpeaking();
   notice("");
   const st = {side, committed:"", session:"", released:false, done:false};
   active = st;
@@ -277,6 +399,7 @@ function endHold(side){
   const st = active;
   if (!st || st.side !== side || st.released) return;
   st.released = true;
+  buzz([15, 60, 15]);
   sides[side].hold.classList.remove("on");
   sides[side].hold.textContent = "Translating…";
   try { st.rec && st.rec.stop(); } catch {}
@@ -301,6 +424,14 @@ async function finish(st){
     resetButtons();
     return;
   }
+  await deliver(side, said, null);
+  resetButtons();
+}
+
+// Translate what `side` said, show it on both halves, log it, and speak it.
+// `entry` is an existing history entry when this is a correction.
+async function deliver(side, said, entry){
+  const other = sides[side].other;
   const from = lang(side), to = lang(other);
   show(side, {label:"You said", text:said});
   show(other, {label:"Translating…"});
@@ -308,15 +439,67 @@ async function finish(st){
     const out = await translate(said, from.tr, to.tr);
     sides[side].last  = {text:said, tts:from.tts};
     sides[other].last = {text:out,  tts:to.tts};
-    show(side,  {label:"Said", text:said});
-    show(other, {label:"Translated", text:out});
+    if (entry) {
+      Object.assign(entry, {said, out, fromTts:from.tts, toTts:to.tts, edited:true});
+      if (!convo.includes(entry)) convo.push(entry);
+    } else {
+      entry = {side, said, out, fromTts:from.tts, toTts:to.tts, time:new Date(), edited:false};
+      convo.push(entry);
+    }
+    sides[side].entry = entry;
+    showSaid(side, entry);
+    show(other, {label: entry.edited ? "Translated (corrected)" : "Translated", text:out});
     sides[side].replay.disabled = false;
     sides[other].replay.disabled = false;
+    renderHistory();
     if (autospeak.checked) speak(out, to.tts);
   } catch (err) {
-    show(other, {label:"Couldn't translate", text:"The translation service didn't respond. Check your connection and try again.", cls:"err"});
+    show(side, {label:"Said · tap to fix or retry", text:said, onTap:() => startEdit(side, said, entry)});
+    show(other, {label:"Couldn't translate", text:"The translation service didn't respond. Check your connection, then tap the original to retry.", cls:"err"});
   }
-  resetButtons();
+}
+
+function showSaid(side, entry){
+  show(side, {
+    label: entry.edited ? "Said (corrected) · tap to fix" : "Said · tap to fix",
+    text: entry.said,
+    onTap: () => startEdit(side, entry.said, entry)
+  });
+}
+
+// ---------- fix a misheard transcript ----------
+let editing = null;
+function startEdit(side, text, entry){
+  if (active || editing) return;
+  editing = side;
+  stopSpeaking();
+  setHoldsEnabled(false);
+  const out = sides[side].out;
+  out.replaceChildren();
+  const ta = document.createElement("textarea");
+  ta.className = "edit-box"; ta.id = "edit-" + side; ta.value = text;
+  ta.setAttribute("aria-label", "Correct what was said");
+  const row = document.createElement("div"); row.className = "edit-row";
+  const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "Cancel";
+  const go = document.createElement("button"); go.type = "button"; go.className = "go"; go.textContent = "Translate";
+  const restore = () => {
+    if (entry) showSaid(side, entry);
+    else show(side, {label:"Said · tap to fix or retry", text, onTap:() => startEdit(side, text, entry)});
+  };
+  cancel.onclick = () => { editing = null; restore(); setHoldsEnabled(true); };
+  go.onclick = async () => {
+    const v = ta.value.trim();
+    if (!v) { cancel.onclick(); return; }
+    editing = null;
+    go.disabled = cancel.disabled = true;
+    primeSpeech();
+    await deliver(side, v, entry);
+    setHoldsEnabled(true);
+  };
+  row.append(cancel, go);
+  out.append(ta, row);
+  ta.focus();
+  try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch {}
 }
 
 for (const s of ["mine","theirs"]) {
@@ -327,6 +510,7 @@ for (const s of ["mine","theirs"]) {
   b.addEventListener("lostpointercapture", () => endHold(s));
   b.addEventListener("contextmenu", e => e.preventDefault());
   sides[s].replay.onclick = () => { const l = sides[s].last; if (l) { primeSpeech(); speak(l.text, l.tts); } };
+  $("stop-"+s).onclick = stopSpeaking;
 }
 // keep the screen awake during a conversation where supported
 try { navigator.wakeLock && navigator.wakeLock.request("screen").catch(()=>{}); } catch {}
