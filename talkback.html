@@ -73,7 +73,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--mine);outline-
 @media (prefers-reduced-motion:reduce){.hold{transition:none}}
 </style>
 </head>
-<body class="facing">
+<body>
 
 <section class="panel theirs" id="p-theirs">
   <div class="head">
@@ -141,7 +141,7 @@ const lang = s => LANGS[sides[s].select.selectedIndex];
 for (const s of ["mine","theirs"]) {
   const sel = sides[s].select;
   LANGS.forEach(l => sel.add(new Option(l.name, l.sr)));
-  sel.value = store.get("lang."+s, s==="mine" ? "en-US" : "es-MX");
+  sel.value = store.get("lang."+s, s==="mine" ? "en-US" : "zh-CN");
   if (sel.selectedIndex < 0) sel.selectedIndex = 0;
   sel.onchange = () => store.set("lang."+s, sel.value);
 }
@@ -152,7 +152,7 @@ autospeak.checked = store.get("autospeak","1") === "1";
 autospeak.onchange = () => store.set("autospeak", autospeak.checked ? "1" : "0");
 rate.value = store.get("rate","1");
 rate.onchange = () => store.set("rate", rate.value);
-if (store.get("facing","1") === "0") document.body.classList.remove("facing");
+if (store.get("facing","0") === "1") document.body.classList.add("facing");
 $("flip").onclick = () => {
   document.body.classList.toggle("facing");
   store.set("facing", document.body.classList.contains("facing") ? "1" : "0");
