@@ -69,6 +69,9 @@ select{
 }
 .strip input{accent-color:var(--mine);margin:0}
 .strip select{margin:0;max-width:none;border-radius:999px;padding:5px 8px;font-size:14px}
+.strip .speed{gap:8px;padding:4px 12px}
+.strip .speed input[type=range]{width:110px;margin:0;touch-action:pan-x}
+.strip .speed output{min-width:3.6em;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
 .notice{width:100%;text-align:center;color:var(--warn);font-size:13px}
 button:focus-visible,select:focus-visible,textarea:focus-visible,.editable:focus-visible{outline:2px solid var(--mine);outline-offset:2px}
 .editable{cursor:pointer;border-radius:6px}
@@ -132,11 +135,10 @@ button:focus-visible,select:focus-visible,textarea:focus-visible,.editable:focus
   <button id="hist-open" type="button">History</button>
   <button id="flip" type="button">Flip top</button>
   <label><input type="checkbox" id="autospeak" checked> Auto-speak</label>
-  <select id="rate" aria-label="Speech speed">
-    <option value="0.8">Slow</option>
-    <option value="1" selected>Normal</option>
-    <option value="1.2">Fast</option>
-  </select>
+  <label class="speed" for="rate">Speed
+    <input type="range" id="rate" min="0.5" max="2" step="0.05" value="1" aria-label="Speech speed">
+    <output id="rate-val" for="rate">1.00×</output>
+  </label>
   <div class="notice" id="notice" hidden></div>
 </nav>
 
@@ -202,8 +204,15 @@ for (const s of ["mine","theirs"]) {
 const autospeak = $("autospeak"), rate = $("rate");
 autospeak.checked = store.get("autospeak","1") === "1";
 autospeak.onchange = () => store.set("autospeak", autospeak.checked ? "1" : "0");
-rate.value = store.get("rate","1");
-rate.onchange = () => store.set("rate", rate.value);
+{
+  const saved = parseFloat(store.get("rate","1"));
+  rate.value = (saved >= 0.5 && saved <= 2) ? saved : 1;
+}
+const showRate = () => { $("rate-val").textContent = parseFloat(rate.value).toFixed(2) + "×"; };
+showRate();
+rate.oninput = showRate;
+rate.onchange = () => { showRate(); store.set("rate", rate.value); };
+rate.ondblclick = () => { rate.value = 1; rate.onchange(); }; // double-tap resets to normal
 if (store.get("facing","0") === "1") document.body.classList.add("facing");
 $("flip").onclick = () => {
   document.body.classList.toggle("facing");
